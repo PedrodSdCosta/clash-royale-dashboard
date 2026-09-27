@@ -1,10 +1,10 @@
 import os
-from urllib.parse import quote
-
-import requests
+import html
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
+
+from clash_api import buscar_jogador, liberar_busca
 
 
 # ============================================================
@@ -30,6 +30,94 @@ PROXY_SECRET = get_config("PROXY_SECRET")
 
 
 # ============================================================
+# RESPONSIVIDADE
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+    .dashboard-deck-grid {
+        display: grid;
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+        gap: 10px;
+        align-items: start;
+        margin-top: 12px;
+    }
+
+    .dashboard-deck-card {
+        text-align: center;
+        min-width: 0;
+    }
+
+    .dashboard-deck-card img {
+        width: 100%;
+        max-width: 118px;
+        height: auto;
+        display: block;
+        margin: 0 auto;
+        border-radius: 10px;
+    }
+
+    .dashboard-deck-name {
+        margin-top: 5px;
+        font-size: .72rem;
+        font-weight: 700;
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-deck-level {
+        margin-top: 2px;
+        font-size: .66rem;
+        opacity: .78;
+        line-height: 1.15;
+    }
+
+    .dashboard-deck-rarity {
+        margin-top: 2px;
+        font-size: .62rem;
+        opacity: .68;
+    }
+
+    div[data-testid="stDataFrame"] {
+        overflow-x: auto;
+    }
+
+    @media (max-width: 700px) {
+        .block-container {
+            padding-left: .8rem;
+            padding-right: .8rem;
+        }
+
+        .dashboard-deck-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px 6px;
+        }
+
+        .dashboard-deck-card img {
+            max-width: 88px;
+        }
+
+        .dashboard-deck-name {
+            font-size: .64rem;
+        }
+
+        .dashboard-deck-level,
+        .dashboard-deck-rarity {
+            font-size: .58rem;
+        }
+
+        div[data-testid="stMetricValue"] {
+            font-size: 1.45rem;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
 # TÍTULO
 # ============================================================
 
@@ -45,18 +133,25 @@ st.markdown(
 # CAMPO DE BUSCA
 # ============================================================
 
-player_tag_input = st.text_input(
-    "Tag do Jogador:",
-    value="#P9RV222GG",
-    help="Exemplo: #P9RV222GG ou P9RV222GG"
-)
+with st.form("busca_jogador_dashboard"):
+    player_tag_input = st.text_input(
+        "Tag do Jogador:",
+        value="#P9RV222GG",
+        help="Exemplo: #P9RV222GG ou P9RV222GG"
+    )
+
+    buscar_dados = st.form_submit_button(
+        "Buscar Dados",
+        type="primary",
+        use_container_width=True
+    )
 
 
 # ============================================================
 # BUSCA
 # ============================================================
 
-if st.button("Buscar Dados", type="primary") or player_tag_input:
+if buscar_dados:
 
     if not PROXY_API_URL:
         st.error(
@@ -70,46 +165,30 @@ if st.button("Buscar Dados", type="primary") or player_tag_input:
 
     else:
 
-        # ----------------------------------------------------
-        # TRATAMENTO DA TAG
-        # ----------------------------------------------------
+        permitido, restante = liberar_busca("dashboard")
 
-        formatted_tag = player_tag_input.strip().upper()
-
-        if not formatted_tag.startswith("#"):
-            formatted_tag = "#" + formatted_tag
-
-        # IMPORTANTE:
-        # # precisa ser convertido para %23 dentro da URL
-        encoded_tag = quote(formatted_tag, safe="")
-
-        # ----------------------------------------------------
-        # REQUISIÇÃO PARA NOSSO PROXY
-        # ----------------------------------------------------
-
-        url = (
-            f"{PROXY_API_URL.rstrip('/')}"
-            f"/v1/players/{encoded_tag}"
-        )
-
-        headers = {
-            "Accept": "application/json",
-            "X-Proxy-Token": PROXY_SECRET
-        }
+        if not permitido:
+            st.warning(
+                f"Aguarde {restante:.1f}s antes de realizar outra busca."
+            )
+            st.stop()
 
         with st.spinner("Buscando dados na API do Clash Royale..."):
 
+            data, erro_busca, status_busca = buscar_jogador(
+                player_tag_input,
+                PROXY_API_URL,
+                PROXY_SECRET,
+            )
+
+            if erro_busca:
+                if status_busca == 429:
+                    st.warning(erro_busca)
+                else:
+                    st.error(erro_busca)
+                st.stop()
+
             try:
-
-                response = requests.get(
-                    url,
-                    headers=headers,
-                    timeout=20
-                )
-
-                response.raise_for_status()
-
-                data = response.json()
 
 
                 # ====================================================
@@ -318,102 +397,72 @@ Nosso sistema converte o nível interno da API para o
 
                 if current_deck:
 
-                    cols = st.columns(8)
+                    rarity_map = {
+                        1: "⚪ Comum",
+                        3: "🟠 Rara",
+                        6: "🟣 Épica",
+                        9: "🟡 Lendária",
+                        11: "🔴 Campeão",
+                    }
 
+                    cards_html = []
 
-                    for idx, card in enumerate(
-                        current_deck
-                    ):
+                    for card in current_deck:
+                        icon_url = (
+                            card
+                            .get("iconUrls", {})
+                            .get("medium", "")
+                        )
 
-                        with cols[idx]:
+                        raw_level = card.get("level", 1)
+                        max_level = card.get("maxLevel", 15)
+                        real_level = 15 - (max_level - raw_level)
+                        min_level = max_level - 14
+                        rarity_label = rarity_map.get(min_level, "Carta")
 
-                            icon_url = (
-                                card
-                                .get("iconUrls", {})
-                                .get("medium", "")
-                            )
+                        nome_carta = html.escape(
+                            str(card.get("name", "Carta"))
+                        )
+                        imagem = html.escape(
+                            str(icon_url),
+                            quote=True,
+                        )
 
+                        if real_level == 15:
+                            nivel_label = "👑 Nível 15 (Elite)"
+                        else:
+                            nivel_label = f"⭐ Nível {real_level}"
 
-                            if icon_url:
+                        imagem_html = (
+                            f'<img src="{imagem}" alt="{nome_carta}">'
+                            if imagem
+                            else ""
+                        )
 
-                                st.image(
-                                    icon_url,
-                                    use_container_width=True
-                                )
+                        cards_html.append(
+                            f"""
+                            <div class="dashboard-deck-card">
+                                {imagem_html}
+                                <div class="dashboard-deck-name">
+                                    {nome_carta}
+                                </div>
+                                <div class="dashboard-deck-level">
+                                    {nivel_label}
+                                </div>
+                                <div class="dashboard-deck-rarity">
+                                    {rarity_label}
+                                </div>
+                            </div>
+                            """
+                        )
 
-
-                            raw_level = card.get(
-                                "level",
-                                1
-                            )
-
-
-                            max_level = card.get(
-                                "maxLevel",
-                                15
-                            )
-
-
-                            real_level = (
-                                15
-                                - (
-                                    max_level
-                                    - raw_level
-                                )
-                            )
-
-
-                            min_level = (
-                                max_level - 14
-                            )
-
-
-                            rarity_map = {
-
-                                1: "⚪ Comum",
-
-                                3: "🟠 Rara",
-
-                                6: "🟣 Épica",
-
-                                9: "🟡 Lendária",
-
-                                11: "🔴 Campeão"
-
-                            }
-
-
-                            rarity_label = (
-                                rarity_map.get(
-                                    min_level,
-                                    "Carta"
-                                )
-                            )
-
-
-                            st.markdown(
-                                f"**{card.get('name')}**"
-                            )
-
-
-                            if real_level == 15:
-
-                                st.markdown(
-                                    "👑 **Nível 15** "
-                                    "*(Elite)*"
-                                )
-
-                            else:
-
-                                st.markdown(
-                                    f"⭐ **Nível "
-                                    f"{real_level}**"
-                                )
-
-
-                            st.caption(
-                                rarity_label
-                            )
+                    st.html(
+                        f"""
+                        <div class="dashboard-deck-grid">
+                            {''.join(cards_html)}
+                        </div>
+                        """
+                    )
 
                 else:
 
@@ -536,57 +585,6 @@ Nosso sistema converte o nível interno da API para o
             # ========================================================
             # TRATAMENTO DE ERROS
             # ========================================================
-
-            except requests.exceptions.HTTPError as err:
-
-                if response.status_code == 404:
-
-                    st.error(
-                        "Jogador não encontrado. "
-                        "Verifique a Tag informada."
-                    )
-
-
-                elif response.status_code == 401:
-
-                    st.error(
-                        "O proxy recusou a autenticação. "
-                        "Verifique o PROXY_SECRET."
-                    )
-
-
-                elif response.status_code == 403:
-
-                    st.error(
-                        "A requisição foi recusada. "
-                        "Verifique o PROXY_SECRET ou "
-                        "a chave da Supercell configurada "
-                        "na VM."
-                    )
-
-
-                else:
-
-                    st.error(
-                        f"Erro na requisição: {err}"
-                    )
-
-
-            except requests.exceptions.Timeout:
-
-                st.error(
-                    "A comunicação com o servidor "
-                    "demorou mais que o esperado."
-                )
-
-
-            except requests.exceptions.ConnectionError:
-
-                st.error(
-                    "Não foi possível conectar ao "
-                    "servidor do Clash Royale."
-                )
-
 
             except Exception as e:
 
