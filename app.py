@@ -35,14 +35,14 @@ col_dashboard, col_comparison = st.columns(2)
 with col_dashboard:
     st.page_link(
         dashboard_page,
-        label="👑 Dashboard",
+        label="Dashboard",
         use_container_width=True,
     )
 
 with col_comparison:
     st.page_link(
         comparison_page,
-        label="⚔️ Jogador vs Jogador",
+        label="Jogador vs Jogador",
         use_container_width=True,
     )
 

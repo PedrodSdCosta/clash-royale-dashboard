@@ -174,19 +174,19 @@ if buscar_dados:
             st.stop()
 
         with st.spinner("Buscando dados na API do Clash Royale..."):
-
             data, erro_busca, status_busca = buscar_jogador(
                 player_tag_input,
                 PROXY_API_URL,
                 PROXY_SECRET,
             )
 
-            if erro_busca:
-                if status_busca == 429:
-                    st.warning(erro_busca)
-                else:
-                    st.error(erro_busca)
-                st.stop()
+        if erro_busca:
+            if status_busca == 429:
+                st.warning(erro_busca)
+            else:
+                st.error(erro_busca)
+
+        else:
 
             try:
 
