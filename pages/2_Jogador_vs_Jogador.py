@@ -266,11 +266,17 @@ st.markdown(
             margin-bottom: 1rem;
         }
 
+        .matchup-board {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
         .matchup-head,
         .matchup-row {
-            grid-template-columns: minmax(0, 1fr) 92px minmax(0, 1fr);
+            grid-template-columns: minmax(150px, 1fr) 92px minmax(150px, 1fr);
             gap: 6px;
             padding: 8px 8px;
+            min-width: 430px;
         }
 
         .matchup-head {
@@ -323,7 +329,8 @@ st.markdown(
         }
 
         .deck-card img {
-            max-width: 92px;
+            width: 100%;
+            max-width: 82px;
             border-radius: 8px;
         }
 
@@ -333,6 +340,10 @@ st.markdown(
 
         .deck-card-level {
             font-size: .60rem;
+        }
+
+        div[data-testid="stDataFrame"] {
+            overflow-x: auto;
         }
     }
 
