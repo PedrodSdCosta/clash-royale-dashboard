@@ -1,10 +1,8 @@
 import os
 import html
-from urllib.parse import quote
-
-import requests
 import streamlit as st
 
+from clash_api import buscar_jogador, liberar_busca, normalizar_tag
 from card_roles import ROLE_LABELS, resumo_de_roles
 from counter_engine import cobertura_respostas, classificar_ameacas, respostas_para_ameaca, identificar_vulnerabilidades
 
@@ -347,98 +345,6 @@ st.markdown(
 # ============================================================
 # FUNÇÕES AUXILIARES
 # ============================================================
-
-def normalizar_tag(tag):
-    """
-    Aceita:
-    P9RV222GG
-    #P9RV222GG
-
-    Retorna:
-    #P9RV222GG
-    """
-
-    if not tag:
-        return ""
-
-    tag = tag.strip().upper().replace(" ", "")
-
-    if not tag.startswith("#"):
-        tag = "#" + tag
-
-    return tag
-
-
-def buscar_jogador(tag):
-    """
-    Consulta o seu proxy, nunca diretamente a API da Supercell.
-    """
-
-    if not PROXY_SECRET:
-        return None, (
-            "PROXY_SECRET não foi encontrado. "
-            "Configure-o nos Secrets do Streamlit ou nas variáveis de ambiente."
-        )
-
-    tag = normalizar_tag(tag)
-
-    if not tag or tag == "#":
-        return None, "Informe uma TAG válida."
-
-    tag_codificada = quote(tag, safe="")
-
-    if not PROXY_API_URL:
-        return None, (
-            "PROXY_API_URL não foi encontrada nos Secrets do Streamlit "
-            "ou nas variáveis de ambiente."
-        )
-
-    url = f"{PROXY_API_URL.rstrip('/')}/v1/players/{tag_codificada}"
-
-    headers = {
-        "X-Proxy-Token": PROXY_SECRET,
-        "Accept": "application/json",
-    }
-
-    try:
-        resposta = requests.get(
-            url,
-            headers=headers,
-            timeout=15
-        )
-
-    except requests.exceptions.Timeout:
-        return None, "O servidor demorou demais para responder."
-
-    except requests.exceptions.ConnectionError:
-        return None, "Não foi possível conectar ao servidor proxy."
-
-    except requests.exceptions.RequestException as erro:
-        return None, f"Erro de comunicação: {erro}"
-
-    if resposta.status_code == 200:
-        try:
-            return resposta.json(), None
-        except ValueError:
-            return None, "O servidor retornou uma resposta inválida."
-
-    if resposta.status_code == 401:
-        return None, "Acesso não autorizado ao proxy."
-
-    if resposta.status_code == 403:
-        return None, "Acesso negado pelo proxy."
-
-    if resposta.status_code == 404:
-        return None, "Jogador não encontrado. Confira a TAG."
-
-    if resposta.status_code == 429:
-        return None, "Muitas consultas em pouco tempo. Tente novamente em alguns instantes."
-
-    if resposta.status_code >= 500:
-        return None, f"O servidor apresentou erro {resposta.status_code}."
-
-    return None, f"Erro HTTP {resposta.status_code}."
-
 
 def obter_nome_arena(jogador):
     arena = jogador.get("arena")
@@ -1678,10 +1584,26 @@ if comparar:
 
         st.stop()
 
+    permitido, restante = liberar_busca("comparacao")
+
+    if not permitido:
+        st.warning(
+            f"Aguarde {restante:.1f}s antes de realizar outra comparação."
+        )
+        st.stop()
+
     with st.spinner("Buscando os dois jogadores..."):
 
-        jogador1, erro1 = buscar_jogador(tag1_normalizada)
-        jogador2, erro2 = buscar_jogador(tag2_normalizada)
+        jogador1, erro1, status1 = buscar_jogador(
+            tag1_normalizada,
+            PROXY_API_URL,
+            PROXY_SECRET,
+        )
+        jogador2, erro2, status2 = buscar_jogador(
+            tag2_normalizada,
+            PROXY_API_URL,
+            PROXY_SECRET,
+        )
 
     if erro1:
 
