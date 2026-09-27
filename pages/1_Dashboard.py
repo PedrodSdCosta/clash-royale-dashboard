@@ -1,5 +1,5 @@
 import os
-import requests
+import html
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
@@ -27,6 +27,94 @@ def get_config(name):
 
 PROXY_API_URL = get_config("PROXY_API_URL")
 PROXY_SECRET = get_config("PROXY_SECRET")
+
+
+# ============================================================
+# RESPONSIVIDADE
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+    .dashboard-deck-grid {
+        display: grid;
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+        gap: 10px;
+        align-items: start;
+        margin-top: 12px;
+    }
+
+    .dashboard-deck-card {
+        text-align: center;
+        min-width: 0;
+    }
+
+    .dashboard-deck-card img {
+        width: 100%;
+        max-width: 118px;
+        height: auto;
+        display: block;
+        margin: 0 auto;
+        border-radius: 10px;
+    }
+
+    .dashboard-deck-name {
+        margin-top: 5px;
+        font-size: .72rem;
+        font-weight: 700;
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-deck-level {
+        margin-top: 2px;
+        font-size: .66rem;
+        opacity: .78;
+        line-height: 1.15;
+    }
+
+    .dashboard-deck-rarity {
+        margin-top: 2px;
+        font-size: .62rem;
+        opacity: .68;
+    }
+
+    div[data-testid="stDataFrame"] {
+        overflow-x: auto;
+    }
+
+    @media (max-width: 700px) {
+        .block-container {
+            padding-left: .8rem;
+            padding-right: .8rem;
+        }
+
+        .dashboard-deck-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px 6px;
+        }
+
+        .dashboard-deck-card img {
+            max-width: 88px;
+        }
+
+        .dashboard-deck-name {
+            font-size: .64rem;
+        }
+
+        .dashboard-deck-level,
+        .dashboard-deck-rarity {
+            font-size: .58rem;
+        }
+
+        div[data-testid="stMetricValue"] {
+            font-size: 1.45rem;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ============================================================
@@ -309,102 +397,72 @@ Nosso sistema converte o nível interno da API para o
 
                 if current_deck:
 
-                    cols = st.columns(8)
+                    rarity_map = {
+                        1: "⚪ Comum",
+                        3: "🟠 Rara",
+                        6: "🟣 Épica",
+                        9: "🟡 Lendária",
+                        11: "🔴 Campeão",
+                    }
 
+                    cards_html = []
 
-                    for idx, card in enumerate(
-                        current_deck
-                    ):
+                    for card in current_deck:
+                        icon_url = (
+                            card
+                            .get("iconUrls", {})
+                            .get("medium", "")
+                        )
 
-                        with cols[idx]:
+                        raw_level = card.get("level", 1)
+                        max_level = card.get("maxLevel", 15)
+                        real_level = 15 - (max_level - raw_level)
+                        min_level = max_level - 14
+                        rarity_label = rarity_map.get(min_level, "Carta")
 
-                            icon_url = (
-                                card
-                                .get("iconUrls", {})
-                                .get("medium", "")
-                            )
+                        nome_carta = html.escape(
+                            str(card.get("name", "Carta"))
+                        )
+                        imagem = html.escape(
+                            str(icon_url),
+                            quote=True,
+                        )
 
+                        if real_level == 15:
+                            nivel_label = "👑 Nível 15 (Elite)"
+                        else:
+                            nivel_label = f"⭐ Nível {real_level}"
 
-                            if icon_url:
+                        imagem_html = (
+                            f'<img src="{imagem}" alt="{nome_carta}">'
+                            if imagem
+                            else ""
+                        )
 
-                                st.image(
-                                    icon_url,
-                                    use_container_width=True
-                                )
+                        cards_html.append(
+                            f"""
+                            <div class="dashboard-deck-card">
+                                {imagem_html}
+                                <div class="dashboard-deck-name">
+                                    {nome_carta}
+                                </div>
+                                <div class="dashboard-deck-level">
+                                    {nivel_label}
+                                </div>
+                                <div class="dashboard-deck-rarity">
+                                    {rarity_label}
+                                </div>
+                            </div>
+                            """
+                        )
 
-
-                            raw_level = card.get(
-                                "level",
-                                1
-                            )
-
-
-                            max_level = card.get(
-                                "maxLevel",
-                                15
-                            )
-
-
-                            real_level = (
-                                15
-                                - (
-                                    max_level
-                                    - raw_level
-                                )
-                            )
-
-
-                            min_level = (
-                                max_level - 14
-                            )
-
-
-                            rarity_map = {
-
-                                1: "⚪ Comum",
-
-                                3: "🟠 Rara",
-
-                                6: "🟣 Épica",
-
-                                9: "🟡 Lendária",
-
-                                11: "🔴 Campeão"
-
-                            }
-
-
-                            rarity_label = (
-                                rarity_map.get(
-                                    min_level,
-                                    "Carta"
-                                )
-                            )
-
-
-                            st.markdown(
-                                f"**{card.get('name')}**"
-                            )
-
-
-                            if real_level == 15:
-
-                                st.markdown(
-                                    "👑 **Nível 15** "
-                                    "*(Elite)*"
-                                )
-
-                            else:
-
-                                st.markdown(
-                                    f"⭐ **Nível "
-                                    f"{real_level}**"
-                                )
-
-
-                            st.caption(
-                                rarity_label
-                            )
+                    st.html(
+                        f"""
+                        <div class="dashboard-deck-grid">
+                            {''.join(cards_html)}
+                        </div>
+                        """
+                    )
 
                 else:
 
