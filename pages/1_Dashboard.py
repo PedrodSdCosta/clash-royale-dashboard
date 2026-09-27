@@ -1,10 +1,10 @@
 import os
-from urllib.parse import quote
-
 import requests
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
+
+from clash_api import buscar_jogador, liberar_busca
 
 
 # ============================================================
@@ -45,18 +45,25 @@ st.markdown(
 # CAMPO DE BUSCA
 # ============================================================
 
-player_tag_input = st.text_input(
-    "Tag do Jogador:",
-    value="#P9RV222GG",
-    help="Exemplo: #P9RV222GG ou P9RV222GG"
-)
+with st.form("busca_jogador_dashboard"):
+    player_tag_input = st.text_input(
+        "Tag do Jogador:",
+        value="#P9RV222GG",
+        help="Exemplo: #P9RV222GG ou P9RV222GG"
+    )
+
+    buscar_dados = st.form_submit_button(
+        "Buscar Dados",
+        type="primary",
+        use_container_width=True
+    )
 
 
 # ============================================================
 # BUSCA
 # ============================================================
 
-if st.button("Buscar Dados", type="primary") or player_tag_input:
+if buscar_dados:
 
     if not PROXY_API_URL:
         st.error(
@@ -70,46 +77,30 @@ if st.button("Buscar Dados", type="primary") or player_tag_input:
 
     else:
 
-        # ----------------------------------------------------
-        # TRATAMENTO DA TAG
-        # ----------------------------------------------------
+        permitido, restante = liberar_busca("dashboard")
 
-        formatted_tag = player_tag_input.strip().upper()
-
-        if not formatted_tag.startswith("#"):
-            formatted_tag = "#" + formatted_tag
-
-        # IMPORTANTE:
-        # # precisa ser convertido para %23 dentro da URL
-        encoded_tag = quote(formatted_tag, safe="")
-
-        # ----------------------------------------------------
-        # REQUISIÇÃO PARA NOSSO PROXY
-        # ----------------------------------------------------
-
-        url = (
-            f"{PROXY_API_URL.rstrip('/')}"
-            f"/v1/players/{encoded_tag}"
-        )
-
-        headers = {
-            "Accept": "application/json",
-            "X-Proxy-Token": PROXY_SECRET
-        }
+        if not permitido:
+            st.warning(
+                f"Aguarde {restante:.1f}s antes de realizar outra busca."
+            )
+            st.stop()
 
         with st.spinner("Buscando dados na API do Clash Royale..."):
 
+            data, erro_busca, status_busca = buscar_jogador(
+                player_tag_input,
+                PROXY_API_URL,
+                PROXY_SECRET,
+            )
+
+            if erro_busca:
+                if status_busca == 429:
+                    st.warning(erro_busca)
+                else:
+                    st.error(erro_busca)
+                st.stop()
+
             try:
-
-                response = requests.get(
-                    url,
-                    headers=headers,
-                    timeout=20
-                )
-
-                response.raise_for_status()
-
-                data = response.json()
 
 
                 # ====================================================
@@ -536,57 +527,6 @@ Nosso sistema converte o nível interno da API para o
             # ========================================================
             # TRATAMENTO DE ERROS
             # ========================================================
-
-            except requests.exceptions.HTTPError as err:
-
-                if response.status_code == 404:
-
-                    st.error(
-                        "Jogador não encontrado. "
-                        "Verifique a Tag informada."
-                    )
-
-
-                elif response.status_code == 401:
-
-                    st.error(
-                        "O proxy recusou a autenticação. "
-                        "Verifique o PROXY_SECRET."
-                    )
-
-
-                elif response.status_code == 403:
-
-                    st.error(
-                        "A requisição foi recusada. "
-                        "Verifique o PROXY_SECRET ou "
-                        "a chave da Supercell configurada "
-                        "na VM."
-                    )
-
-
-                else:
-
-                    st.error(
-                        f"Erro na requisição: {err}"
-                    )
-
-
-            except requests.exceptions.Timeout:
-
-                st.error(
-                    "A comunicação com o servidor "
-                    "demorou mais que o esperado."
-                )
-
-
-            except requests.exceptions.ConnectionError:
-
-                st.error(
-                    "Não foi possível conectar ao "
-                    "servidor do Clash Royale."
-                )
-
 
             except Exception as e:
 
