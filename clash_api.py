@@ -11,6 +11,13 @@ SEARCH_COOLDOWN_SECONDS = 1.5
 TAG_PATTERN = re.compile(r"^#[0289PYLQGRJCUV]+$")
 
 
+class ClashApiError(Exception):
+    def __init__(self, mensagem, status=None):
+        super().__init__(mensagem)
+        self.mensagem = mensagem
+        self.status = status
+
+
 def normalizar_tag(tag):
     """Normaliza uma TAG do Clash Royale para o formato #ABC123."""
     if not tag:
@@ -43,9 +50,8 @@ def validar_tag(tag):
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _buscar_jogador_cache(proxy_api_url, proxy_secret, tag):
     """
-    Consulta o proxy e mantém o resultado em cache por um curto período.
-    O cache é compartilhado pelo processo do Streamlit para a mesma
-    combinação de URL, credencial e TAG, reduzindo chamadas repetidas.
+    Consulta o proxy e mantém somente respostas bem-sucedidas em cache.
+    Exceções não ficam cacheadas, evitando "prender" respostas 429/5xx.
     """
     tag_codificada = quote(tag, safe="")
     url = f"{proxy_api_url.rstrip('/')}/v1/players/{tag_codificada}"
@@ -57,48 +63,68 @@ def _buscar_jogador_cache(proxy_api_url, proxy_secret, tag):
 
     try:
         resposta = requests.get(url, headers=headers, timeout=15)
-    except requests.exceptions.Timeout:
-        return None, "O servidor demorou demais para responder.", 408
-    except requests.exceptions.ConnectionError:
-        return None, "Não foi possível conectar ao servidor proxy.", 503
+    except requests.exceptions.Timeout as erro:
+        raise ClashApiError(
+            "O servidor demorou demais para responder.",
+            408,
+        ) from erro
+    except requests.exceptions.ConnectionError as erro:
+        raise ClashApiError(
+            "Não foi possível conectar ao servidor proxy.",
+            503,
+        ) from erro
     except requests.exceptions.RequestException as erro:
-        return None, f"Erro de comunicação: {erro}", 500
+        raise ClashApiError(
+            f"Erro de comunicação: {erro}",
+            500,
+        ) from erro
 
     status = resposta.status_code
 
     if status == 200:
         try:
-            return resposta.json(), None, status
-        except ValueError:
-            return None, "O servidor retornou uma resposta inválida.", 502
+            return resposta.json()
+        except ValueError as erro:
+            raise ClashApiError(
+                "O servidor retornou uma resposta inválida.",
+                502,
+            ) from erro
 
     if status == 401:
-        return None, "Acesso não autorizado ao proxy.", status
+        raise ClashApiError("Acesso não autorizado ao proxy.", status)
 
     if status == 403:
-        return None, "Acesso negado pelo proxy.", status
+        raise ClashApiError("Acesso negado pelo proxy.", status)
 
     if status == 404:
-        return None, "Jogador não encontrado. Confira a TAG.", status
-
-    if status == 429:
-        retry_after = resposta.headers.get("Retry-After")
-        if retry_after:
-            return (
-                None,
-                f"Muitas consultas em pouco tempo. Tente novamente em {retry_after}s.",
-                status,
-            )
-        return (
-            None,
-            "Muitas consultas em pouco tempo. Aguarde alguns instantes e tente novamente.",
+        raise ClashApiError(
+            "Jogador não encontrado. Confira a TAG.",
             status,
         )
 
-    if status >= 500:
-        return None, f"O servidor apresentou erro {status}.", status
+    if status == 429:
+        retry_after = resposta.headers.get("Retry-After")
 
-    return None, f"Erro HTTP {status}.", status
+        if retry_after:
+            mensagem = (
+                "Muitas consultas em pouco tempo. "
+                f"Tente novamente em {retry_after}s."
+            )
+        else:
+            mensagem = (
+                "Muitas consultas em pouco tempo. "
+                "Aguarde alguns instantes e tente novamente."
+            )
+
+        raise ClashApiError(mensagem, status)
+
+    if status >= 500:
+        raise ClashApiError(
+            f"O servidor apresentou erro {status}.",
+            status,
+        )
+
+    raise ClashApiError(f"Erro HTTP {status}.", status)
 
 
 def buscar_jogador(tag, proxy_api_url, proxy_secret):
@@ -121,7 +147,15 @@ def buscar_jogador(tag, proxy_api_url, proxy_secret):
     if not valida:
         return None, erro, 400
 
-    return _buscar_jogador_cache(proxy_api_url, proxy_secret, tag)
+    try:
+        data = _buscar_jogador_cache(
+            proxy_api_url,
+            proxy_secret,
+            tag,
+        )
+        return data, None, 200
+    except ClashApiError as erro:
+        return None, erro.mensagem, erro.status
 
 
 def liberar_busca(chave="busca", segundos=SEARCH_COOLDOWN_SECONDS):
