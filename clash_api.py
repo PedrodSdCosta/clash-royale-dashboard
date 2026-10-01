@@ -8,7 +8,7 @@ import streamlit as st
 
 CACHE_TTL_SECONDS = 60
 SEARCH_COOLDOWN_SECONDS = 1.5
-TAG_PATTERN = re.compile(r"^#[0289PYLQGRJCUV]+$")
+TAG_PATTERN = re.compile(r"^#[0289PYLQGRJCUV]{3,14}$")
 
 
 class ClashApiError(Exception):

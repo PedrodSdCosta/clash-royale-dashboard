@@ -209,10 +209,7 @@ if buscar_dados:
                         or "Played" in badge_name
                     ):
 
-                        val = badge.get(
-                            "progress",
-                            badge.get("level", 0)
-                        )
+                        val = badge.get("progress") or badge.get("level") or 0
 
                         if val > 100:
 
